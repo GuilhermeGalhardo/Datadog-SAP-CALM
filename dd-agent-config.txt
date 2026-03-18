@@ -1,0 +1,63 @@
+# datadog.yaml — Datadog Agent com OTLP receiver habilitado
+# Referência: https://docs.datadoghq.com/opentelemetry/otlp_ingest_in_the_agent
+
+api_key: ${DD_API_KEY}
+site: datadoghq.com    # ou datadoghq.eu, us3.datadoghq.com, etc.
+
+# ─── OTLP Ingest ─────────────────────────────────────────────────
+# Habilita o receiver OTLP nativo do DD Agent para receber
+# metrics, logs e traces via gRPC (4317) e HTTP (4318).
+otlp_config:
+  receiver:
+    protocols:
+      grpc:
+        endpoint: "0.0.0.0:4317"
+        transport: tcp
+      http:
+        endpoint: "0.0.0.0:4318"
+
+  # Mapeamento de métricas OTLP → Datadog
+  metrics:
+    # 'counters' traduz OTLP Sum monotonic para DD count
+    # 'gauges' traduz OTLP Gauge para DD gauge
+    resource_attributes_as_tags: true
+    instrumentation_scope_metadata_as_tags: true
+    # Prefixo opcional para todas as métricas OTLP
+    # (já vem com sap.calm.* do exporter Python)
+    tag_cardinality: orchestrator
+    histograms:
+      mode: distributions
+      send_aggregation_metrics: true
+
+# ─── Logs ─────────────────────────────────────────────────────────
+logs_enabled: true
+
+# ─── APM / Traces ────────────────────────────────────────────────
+apm_config:
+  enabled: true
+  # Aceita traces OTLP pelo receiver acima;
+  # não precisa de porta separada 8126 para este caso.
+  otlp_receiver:
+    # Resource attributes que viram tags no trace
+    resource_attributes_as_tags: true
+  # Probabilistic sampler: mantém 100% (ajuste se volume alto)
+  max_traces_per_second: 1000
+
+# ─── Tags globais ────────────────────────────────────────────────
+tags:
+  - "source:sap_calm"
+  - "env:production"
+
+# ─── Unified Service Tagging ─────────────────────────────────────
+# O DD Agent extrai automaticamente service, env e version
+# dos resource attributes do OTEL (service.name, deployment.environment).
+# Os resource attributes configurados no Python ficam disponíveis
+# como tags em métricas, logs e traces no Datadog.
+
+# ─── Health check do Agent ────────────────────────────────────────
+health_port: 5555
+
+# ─── Processamento interno ────────────────────────────────────────
+# Limites de memória para proteger o Agent sob carga alta
+apm_config.max_memory: 500000000        # 500 MB
+apm_config.max_cpu_percent: 50

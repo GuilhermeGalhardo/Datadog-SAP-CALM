@@ -1,0 +1,20 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Dependências de sistema para grpcio
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends gcc libffi-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY calm_otel_bridge.py .
+COPY config.yaml .
+
+# Volume para o SQLite de dedup
+RUN mkdir -p /app/data
+ENV BRIDGE_CONFIG=/app/config.yaml
+
+CMD ["python", "calm_otel_bridge.py"]

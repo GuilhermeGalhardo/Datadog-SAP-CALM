@@ -1,0 +1,64 @@
+version: "3.9"
+
+services:
+  # ─── Datadog Agent com OTLP receiver ──────────────────────────
+  datadog-agent:
+    image: gcr.io/datadoghq/agent:7-jmx
+    container_name: dd-agent
+    restart: unless-stopped
+    environment:
+      - DD_API_KEY=${DD_API_KEY}
+      - DD_SITE=${DD_SITE:-datadoghq.com}
+      - DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_GRPC_ENDPOINT=0.0.0.0:4317
+      - DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_HTTP_ENDPOINT=0.0.0.0:4318
+      - DD_OTLP_CONFIG_METRICS_RESOURCE_ATTRIBUTES_AS_TAGS=true
+      - DD_APM_ENABLED=true
+      - DD_LOGS_ENABLED=true
+      - DD_DOGSTATSD_NON_LOCAL_TRAFFIC=true
+      # Tags globais
+      - DD_TAGS=source:sap_calm env:production
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "8125:8125"   # DogStatsD (opcional)
+      - "8126:8126"   # APM (opcional, para outros traces)
+    volumes:
+      - ./datadog-agent/datadog.yaml:/etc/datadog-agent/datadog.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc/:/host/proc/:ro
+      - /sys/fs/cgroup/:/host/sys/fs/cgroup:ro
+    healthcheck:
+      test: ["CMD", "agent", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ─── CALM-OTEL Bridge ────────────────────────────────────────
+  calm-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: calm-otel-bridge
+    restart: unless-stopped
+    depends_on:
+      datadog-agent:
+        condition: service_healthy
+    environment:
+      # Credenciais CALM (via .env ou secrets)
+      - CALM_CLIENT_ID=${CALM_CLIENT_ID}
+      - CALM_CLIENT_SECRET=${CALM_CLIENT_SECRET}
+      # Aponta o exporter OTEL para o DD Agent no compose network
+      - OTEL_EXPORTER_OTLP_ENDPOINT=datadog-agent:4317
+      # Resource attributes OTEL
+      - OTEL_SERVICE_NAME=sap-rise-calm
+      - OTEL_RESOURCE_ATTRIBUTES=deployment.environment=production,service.namespace=sap
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - bridge-data:/app/data     # SQLite persiste entre restarts
+    # Override do path do banco para volume persistente
+    command: >
+      python calm_otel_bridge.py
+
+volumes:
+  bridge-data:
+    driver: local
